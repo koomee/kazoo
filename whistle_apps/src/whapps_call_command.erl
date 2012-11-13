@@ -16,7 +16,9 @@
 -export([b_call_status/1, b_channel_status/1]).
 -export([response/2, response/3, response/4]).
 
--export([relay_event/2]).
+-export([relay_event/2
+         ,receive_event/1, receive_event/2
+        ]).
 
 -export([audio_macro/2]).
 -export([pickup/2, pickup/3, pickup/4, pickup/5, pickup/6
@@ -104,7 +106,7 @@
                               {'prompt', binary()} | {'prompt', binary(), binary()} |
                               {'say', binary()} | {'say', binary(), binary()} |
                               {'say', binary(), binary(), binary()} | {'say', binary(), binary(), binary(), binary()} |
-                              {'tones', wh_json:json_objects()} |
+                              {'tones', wh_json:objects()} |
                               {'tts', ne_binary()} | {'tts', ne_binary(), ne_binary()} | {'tts', ne_binary(), ne_binary(), ne_binary()}.
 -export_type([audio_macro_prompt/0]).
 
@@ -220,12 +222,33 @@ b_channel_status(Call) ->
 %%      for them in the receive blocks below.
 %% @end
 %%--------------------------------------------------------------------
--spec relay_event/2 :: (pid(), wh_json:json_object()) -> any().
+-spec relay_event/2 :: (pid(), wh_json:object()) -> any().
 relay_event(Pid, JObj) ->
     Pid ! {amqp_msg, JObj}.
 
+-spec receive_event/1 :: (integer()) ->
+                                 {'ok', wh_json:object()} |
+                                 {'error', 'timeout'}.
+-spec receive_event/2 :: (integer(), boolean()) ->
+                                 {'ok', wh_json:object()} |
+                                 {'other', wh_json:object()} |
+                                 {'error', 'timeout'}.
+receive_event(Timeout) ->
+    receive_event(Timeout, true).
+receive_event(T, _) when T =< 0 -> {error, timeout};
+receive_event(Timeout, IgnoreOthers) ->
+    Start = erlang:now(),
+    receive
+        {amqp_msg, JObj} -> {ok, JObj};
+        _ when IgnoreOthers ->
+            receive_event(Timeout - wh_util:elapsed_ms(Start), IgnoreOthers);
+        Other -> {other, Other}
+    after
+        Timeout -> {error, timeout}
+    end.
+
 -spec audio_macro/2 :: ([audio_macro_prompt(),...], whapps_call:call()) -> ne_binary().
--spec audio_macro/3 :: ([audio_macro_prompt(),...], whapps_call:call(), wh_json:json_objects()) -> binary().
+-spec audio_macro/3 :: ([audio_macro_prompt(),...], whapps_call:call(), wh_json:objects()) -> binary().
 
 audio_macro([], Call) ->
     noop(Call);
@@ -318,11 +341,11 @@ pickup(TargetCallId, Insert, ContinueOnFail, ContinueOnCancel, ParkAfterPickup, 
               ],
     send_command(Command, Call).
 
--spec b_pickup/2 :: (ne_binary(), whapps_call:call()) -> {'ok', wh_json:json_object()}.
--spec b_pickup/3 :: (ne_binary(), ne_binary(), whapps_call:call()) -> {'ok', wh_json:json_object()}.
--spec b_pickup/4 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:json_object()}.
--spec b_pickup/5 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:json_object()}.
--spec b_pickup/6 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), ne_binary() | boolean(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:json_object()}.
+-spec b_pickup/2 :: (ne_binary(), whapps_call:call()) -> {'ok', wh_json:object()}.
+-spec b_pickup/3 :: (ne_binary(), ne_binary(), whapps_call:call()) -> {'ok', wh_json:object()}.
+-spec b_pickup/4 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:object()}.
+-spec b_pickup/5 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:object()}.
+-spec b_pickup/6 :: (ne_binary(), ne_binary(), ne_binary() | boolean(), ne_binary() | boolean(), ne_binary() | boolean(), whapps_call:call()) -> {'ok', wh_json:object()}.
 b_pickup(TargetCallId, Call) ->
     pickup(TargetCallId, Call),
     wait_for_channel_unbridge().
@@ -373,7 +396,7 @@ flush_dtmf(Call) ->
 %%   can not be used to set system settings
 %% @end
 %%--------------------------------------------------------------------
--spec set/3 :: ('undefined' | wh_json:json_object(), 'undefined' | wh_json:json_object(), whapps_call:call()) -> 'ok'.
+-spec set/3 :: ('undefined' | wh_json:object(), 'undefined' | wh_json:object(), whapps_call:call()) -> 'ok'.
 set(undefined, CallVars, Call) ->
     set(wh_json:new(), CallVars, Call);
 set(ChannelVars, undefined, Call) ->
@@ -437,7 +460,7 @@ b_fetch(FromOtherLeg, Call) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec ring/1 :: (whapps_call:call()) -> 'ok'.
--spec b_ring/1 :: (whapps_call:call()) -> whapps_api_error() | {'ok', wh_json:json_object()}.
+-spec b_ring/1 :: (whapps_call:call()) -> whapps_api_error() | {'ok', wh_json:object()}.
 
 ring(Call) ->
     Command = [{<<"Application-Name">>, <<"ring">>}],
@@ -455,7 +478,7 @@ b_ring(Call) ->
 %%--------------------------------------------------------------------
 -spec receive_fax/1 :: (whapps_call:call()) -> 'ok'.
 -spec b_receive_fax/1 :: (whapps_call:call()) -> whapps_api_error() |
-                                                 {'ok', wh_json:json_object()}.
+                                                 {'ok', wh_json:object()}.
 
 receive_fax(Call) ->
     Command = [{<<"Application-Name">>, <<"receive_fax">>}],
@@ -472,7 +495,7 @@ b_receive_fax(Call) ->
 %% @end
 %%--------------------------------------------------------------------
 -spec answer/1 :: (whapps_call:call()) -> 'ok'.
--spec b_answer/1 :: (whapps_call:call()) -> whapps_api_error() | {'ok', wh_json:json_object()}.
+-spec b_answer/1 :: (whapps_call:call()) -> whapps_api_error() | {'ok', wh_json:object()}.
 
 answer(Call) ->
     Command = [{<<"Application-Name">>, <<"answer">>}],
@@ -524,20 +547,20 @@ b_hangup(true, Call) ->
 %% Produces the low level wh_api request to bridge the call
 %% @end
 %%--------------------------------------------------------------------
--spec bridge/2 :: (wh_json:json_objects(), whapps_call:call()) -> 'ok'.
--spec bridge/3 :: (wh_json:json_objects(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
--spec bridge/4 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
--spec bridge/5 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
--spec bridge/6 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
--spec bridge/7 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:json_object() | 'undefined', whapps_call:call()) -> 'ok'.
+-spec bridge/2 :: (wh_json:objects(), whapps_call:call()) -> 'ok'.
+-spec bridge/3 :: (wh_json:objects(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
+-spec bridge/4 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
+-spec bridge/5 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
+-spec bridge/6 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
+-spec bridge/7 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:object() | 'undefined', whapps_call:call()) -> 'ok'.
 
--spec b_bridge/2 :: (wh_json:json_objects(), whapps_call:call()) -> whapps_api_bridge_return().
--spec b_bridge/3 :: (wh_json:json_objects(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
--spec b_bridge/4 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
--spec b_bridge/5 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
--spec b_bridge/6 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) 
+-spec b_bridge/2 :: (wh_json:objects(), whapps_call:call()) -> whapps_api_bridge_return().
+-spec b_bridge/3 :: (wh_json:objects(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
+-spec b_bridge/4 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
+-spec b_bridge/5 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> whapps_api_bridge_return().
+-spec b_bridge/6 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) 
                     -> whapps_api_bridge_return().
--spec b_bridge/7 :: (wh_json:json_objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:json_object() | 'undefined', whapps_call:call())
+-spec b_bridge/7 :: (wh_json:objects(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:object() | 'undefined', whapps_call:call())
                     -> whapps_api_bridge_return().
 
 bridge(Endpoints, Call) ->
@@ -678,7 +701,7 @@ b_play(Media, Call) ->
 b_play(Media, Terminators, Call) ->
     wait_for_noop(play(Media, Terminators, Call)).
 
--spec play_command/3 :: (ne_binary(), [ne_binary(),...], whapps_call:call()) -> wh_json:json_object().
+-spec play_command/3 :: (ne_binary(), [ne_binary(),...], whapps_call:call()) -> wh_json:object().
 play_command(Media, Terminators, Call) ->
     wh_json:from_list([{<<"Application-Name">>, <<"play">>}
                        ,{<<"Media-Name">>, Media}
@@ -723,11 +746,11 @@ tts(SayMe, Voice, Lang, Terminators, Engine, Call) ->
     send_command(Command, Call),
     NoopId.
 
--spec tts_command/2 :: (api_binary(), whapps_call:call()) -> wh_json:json_object().
--spec tts_command/3 :: (api_binary(), api_binary(), whapps_call:call()) -> wh_json:json_object().
--spec tts_command/4 :: (api_binary(), api_binary(), api_binary(), whapps_call:call()) -> wh_json:json_object().
--spec tts_command/5 :: (api_binary(), api_binary(), api_binary(), api_binaries(), whapps_call:call()) -> wh_json:json_object().
--spec tts_command/6 :: (api_binary(), api_binary(), api_binary(), api_binaries(), api_binary(), whapps_call:call()) -> wh_json:json_object().
+-spec tts_command/2 :: (api_binary(), whapps_call:call()) -> wh_json:object().
+-spec tts_command/3 :: (api_binary(), api_binary(), whapps_call:call()) -> wh_json:object().
+-spec tts_command/4 :: (api_binary(), api_binary(), api_binary(), whapps_call:call()) -> wh_json:object().
+-spec tts_command/5 :: (api_binary(), api_binary(), api_binary(), api_binaries(), whapps_call:call()) -> wh_json:object().
+-spec tts_command/6 :: (api_binary(), api_binary(), api_binary(), api_binaries(), api_binary(), whapps_call:call()) -> wh_json:object().
 tts_command(SayMe, Call) -> tts_command(SayMe, <<"female">>, Call).
 tts_command(SayMe, Voice, Call) -> tts_command(SayMe, Voice, <<"en-US">>, Call).
 tts_command(SayMe, Voice, Lang, Call) -> tts_command(SayMe, Voice, Lang, ?ANY_DIGIT, Call).
@@ -855,15 +878,15 @@ b_record_call(MediaName, Action, TimeLimit, Terminators, Call) ->
 %% Produces the low level wh_api request to store the file
 %% @end
 %%--------------------------------------------------------------------
--type b_store_return() :: {'error', 'timeout' | wh_json:json_object()} | {'ok', wh_json:json_object()}.
+-type b_store_return() :: {'error', 'timeout' | wh_json:object()} | {'ok', wh_json:object()}.
 
 -spec store/3 :: (ne_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
 -spec store/4 :: (ne_binary(), whapps_api_binary(), whapps_api_binary(), whapps_call:call()) -> 'ok'.
--spec store/5 :: (ne_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:json_objects(), whapps_call:call()) -> 'ok'.
+-spec store/5 :: (ne_binary(), whapps_api_binary(), whapps_api_binary(), wh_json:objects(), whapps_call:call()) -> 'ok'.
 
 -spec b_store/3 :: (ne_binary(), ne_binary(), whapps_call:call()) -> b_store_return().
 -spec b_store/4 :: (ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> b_store_return().
--spec b_store/5 :: (ne_binary(), ne_binary(), ne_binary(), wh_json:json_objects(), whapps_call:call()) -> b_store_return().
+-spec b_store/5 :: (ne_binary(), ne_binary(), ne_binary(), wh_json:objects(), whapps_call:call()) -> b_store_return().
 
 store(MediaName, Transfer, Call) ->
     store(MediaName, Transfer, <<"put">>, Call).
@@ -915,14 +938,14 @@ b_store_fax(URL, Call) ->
 %% caller
 %% @end
 %%--------------------------------------------------------------------
--spec tones/2 :: (wh_json:json_objects(), whapps_call:call()) -> 'ok'.
+-spec tones/2 :: (wh_json:objects(), whapps_call:call()) -> 'ok'.
 tones(Tones, Call) ->
     Command = [{<<"Application-Name">>, <<"tones">>}
                ,{<<"Tones">>, Tones}
               ],
     send_command(Command, Call).
 
--spec tones_command/2 :: (wh_json:json_objects(), whapps_call:call()) -> wh_json:json_object().
+-spec tones_command/2 :: (wh_json:objects(), whapps_call:call()) -> wh_json:object().
 tones_command(Tones, Call) ->
     CallId = whapps_call:call_id(Call),
     wh_json:from_list([{<<"Application-Name">>, <<"tones">>}
@@ -1004,7 +1027,7 @@ b_prompt_and_collect_digits(MinDigits, MaxDigits, Prompt, Tries, Timeout, Invali
 %% caller, and collect a number of DTMF events.
 %% @end
 %%--------------------------------------------------------------------
--type b_play_and_collect_digits_return() :: {'error', 'channel_hungup' | 'channel_unbridge' | wh_json:json_object()} | {'ok', binary()}.
+-type b_play_and_collect_digits_return() :: {'error', 'channel_hungup' | 'channel_unbridge' | wh_json:object()} | {'ok', binary()}.
 
 -spec play_and_collect_digit/2 :: (ne_binary(), whapps_call:call()) -> 'ok'.
 -spec play_and_collect_digits/4 :: (ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> 'ok'.
@@ -1120,7 +1143,7 @@ say(Say, Type, Method, Language,Call) ->
               ],
     send_command(Command, Call).
 
--spec say_command/5 :: (ne_binary(), ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> wh_json:json_object().
+-spec say_command/5 :: (ne_binary(), ne_binary(), ne_binary(), ne_binary(), whapps_call:call()) -> wh_json:object().
 say_command(Say, Type, Method, Language, Call) ->
     CallId = whapps_call:call_id(Call),
     wh_json:from_list([{<<"Application-Name">>, <<"say">>}
@@ -1245,7 +1268,7 @@ b_flush(Call) ->
 %% execution untill the call is terminated.
 %% @end
 %%--------------------------------------------------------------------
--type collect_digits_return() :: {'error','channel_hungup' | 'channel_unbridge' | wh_json:json_object()} | {'ok', ne_binary()}.
+-type collect_digits_return() :: {'error','channel_hungup' | 'channel_unbridge' | wh_json:object()} | {'ok', ne_binary()}.
 -spec collect_digits/2 :: (integer() | ne_binary(), whapps_call:call()) -> collect_digits_return().
 -spec collect_digits/3 :: (integer() | ne_binary(), integer() | ne_binary(), whapps_call:call()) -> collect_digits_return().
 -spec collect_digits/4 :: (integer() | ne_binary(), integer() | ne_binary(), integer() | ne_binary(), whapps_call:call()) 
@@ -1387,16 +1410,20 @@ wait_for_message(Application, Event, Type, Timeout) ->
                 _ when Timeout =:= infinity ->
                     wait_for_message(Application, Event, Type, Timeout);
                 _ ->
-                    wait_for_message(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+                    wait_for_message(Application, Event, Type, decr_timeout(Timeout, Start))
             end;
         _ when Timeout =:= infinity ->
             wait_for_message(Application, Event, Type, Timeout);
         _ ->
-            wait_for_message(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+            wait_for_message(Application, Event, Type, decr_timeout(Timeout, Start))
     after
         Timeout ->
             {error, timeout}
     end.
+
+-spec decr_timeout/2 :: (integer() | 'infinity', wh_now()) -> integer() | 'inifinity'.
+decr_timeout(infinity, _) -> inifinity;
+decr_timeout(T, Start) when is_integer(T) -> T - wh_util:elapsed_ms(Start).
 
 %%--------------------------------------------------------------------
 %% @public
@@ -1405,7 +1432,7 @@ wait_for_message(Application, Event, Type, Timeout) ->
 %% is only interested in events for the application.
 %% @end
 %%--------------------------------------------------------------------
--type wait_for_application_return() :: {'error', 'timeout' | wh_json:json_object()} | {'ok', wh_json:json_object()}.
+-type wait_for_application_return() :: {'error', 'timeout' | wh_json:object()} | {'ok', wh_json:object()}.
 -spec wait_for_application/1 :: (ne_binary()) -> wait_for_application_return().
 -spec wait_for_application/2 :: (ne_binary(), ne_binary()) -> wait_for_application_return().
 -spec wait_for_application/3 :: (ne_binary(), ne_binary(), ne_binary()) -> wait_for_application_return().
@@ -1434,12 +1461,12 @@ wait_for_application(Application, Event, Type, Timeout) ->
                 _ when Timeout =:= infinity ->
                     wait_for_application(Application, Event, Type, Timeout);
                 _ ->
-                    wait_for_application(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+                    wait_for_application(Application, Event, Type, decr_timeout(Timeout, Start))
             end;
         _ when Timeout =:= infinity ->
             wait_for_application(Application, Event, Type, Timeout);
         _ ->
-            wait_for_application(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+            wait_for_application(Application, Event, Type, decr_timeout(Timeout, Start))
     after
         Timeout ->
             {error, timeout}
@@ -1452,8 +1479,8 @@ wait_for_application(Application, Event, Type, Timeout) ->
 %% is only interested in events for the application.
 %% @end
 %%--------------------------------------------------------------------
--type wait_for_headless_application_return() :: {'error', 'timeout' | wh_json:json_object()} |
-                                                {'ok', wh_json:json_object()}.
+-type wait_for_headless_application_return() :: {'error', 'timeout' | wh_json:object()} |
+                                                {'ok', wh_json:object()}.
 -spec wait_for_headless_application/1 :: (ne_binary()) ->
                                                  wait_for_headless_application_return().
 -spec wait_for_headless_application/2 :: (ne_binary(), ne_binary()) ->
@@ -1491,12 +1518,12 @@ wait_for_headless_application(Application, Event, Type, Timeout) ->
                     wait_for_headless_application(Application, Event, Type, Timeout);
                 _T ->
                     lager:debug("ignore ~p", [_T]),
-                    wait_for_headless_application(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+                    wait_for_headless_application(Application, Event, Type, decr_timeout(Timeout, Start))
             end;
         _ when Timeout =:= infinity ->
             wait_for_headless_application(Application, Event, Type, Timeout);
         _ ->
-            wait_for_headless_application(Application, Event, Type, Timeout - wh_util:elapsed_ms(Start))
+            wait_for_headless_application(Application, Event, Type, decr_timeout(Timeout, Start))
     after
         Timeout ->
             {error, timeout}
@@ -1508,7 +1535,7 @@ wait_for_headless_application(Application, Event, Type, Timeout) ->
 %% Wait for a DTMF event and extract the digits when it comes
 %% @end
 %%--------------------------------------------------------------------
--spec wait_for_dtmf/1 :: ('infinity' | pos_integer()) -> {'error', 'channel_hungup' | wh_json:json_object()} | {'ok', binary()}.
+-spec wait_for_dtmf/1 :: ('infinity' | pos_integer()) -> {'error', 'channel_hungup' | wh_json:object()} | {'ok', binary()}.
 wait_for_dtmf(Timeout) ->
     Start = erlang:now(),
     receive
@@ -1525,19 +1552,14 @@ wait_for_dtmf(Timeout) ->
                     {error, JObj};
                 { <<"call_event">>, <<"DTMF">> } ->
                     {ok, wh_json:get_value(<<"DTMF-Digit">>, JObj)};
-                _ when Timeout =:= infinity ->
-                    wait_for_dtmf(Timeout);
                 _ ->
-                    wait_for_dtmf(Timeout - wh_util:elapsed_ms(Start))
+                    wait_for_dtmf(decr_timeout(Timeout, Start)
             end;
-        _E when Timeout =:= infinity ->
-            lager:debug("unexpected ~p", [_E]),
-            wait_for_dtmf(Timeout);
         _E ->
             lager:debug("unexpected ~p", [_E]),
             %% dont let the mailbox grow unbounded if
             %%   this process hangs around...
-            wait_for_dtmf(Timeout - wh_util:elapsed_ms(Start))
+            wait_for_dtmf(decr_timeout(Timeout, Start))
     after
         Timeout ->
             {ok, <<>>}
@@ -1604,7 +1626,7 @@ wait_for_bridge(Timeout, Fun, Call) ->
 %% Wait for a noop or a specific noop to occur
 %% @end
 %%--------------------------------------------------------------------
--spec wait_for_noop/1 :: ('undefined' | ne_binary()) -> whapps_api_std_return().
+-spec wait_for_noop/1 :: (api_binary()) -> whapps_api_std_return().
 wait_for_noop(NoopId) ->
     case wait_for_message(<<"noop">>, <<"CHANNEL_EXECUTE_COMPLETE">>, <<"call_event">>, infinity) of
         {ok, JObj}=OK ->
@@ -1622,7 +1644,7 @@ wait_for_noop(NoopId) ->
 %% Wait for a channel to be unbridged from (or destroyed)
 %% @end
 %%--------------------------------------------------------------------
--spec wait_for_channel_unbridge/0 :: () -> {'ok', wh_json:json_object()}.
+-spec wait_for_channel_unbridge/0 :: () -> {'ok', wh_json:object()}.
 wait_for_channel_unbridge() ->
     receive
         {amqp_msg, JObj} ->
@@ -1646,7 +1668,7 @@ wait_for_channel_unbridge() ->
 %% Wait for a channel to be bridged to (or destroyed)
 %% @end
 %%--------------------------------------------------------------------
--spec wait_for_channel_bridge/0 :: () -> {'ok', wh_json:json_object()}.
+-spec wait_for_channel_bridge/0 :: () -> {'ok', wh_json:object()}.
 wait_for_channel_bridge() ->
     receive
         {amqp_msg, JObj} ->
@@ -1751,8 +1773,8 @@ wait_for_application_or_dtmf(Application, Timeout) ->
             {error, timeout}
     end.
 
--type wait_for_fax_ret() :: {'ok', wh_json:json_object()} |
-                            {'error', 'channel_destroy' | 'channel_hungup' | wh_json:json_object()}.
+-type wait_for_fax_ret() :: {'ok', wh_json:object()} |
+                            {'error', 'channel_destroy' | 'channel_hungup' | wh_json:object()}.
 -spec wait_for_fax/0 :: () -> wait_for_fax_ret().
 -spec wait_for_fax/1 :: (integer() | 'infinity') -> wait_for_fax_ret().
 wait_for_fax() ->
@@ -1789,7 +1811,7 @@ wait_for_fax(Timeout) ->
 %% Wait forever for the channel to hangup
 %% @end
 %%--------------------------------------------------------------------
--spec get_event_type/1 :: (wh_json:json_object()) -> {binary(), binary(), binary()}.
+-spec get_event_type/1 :: (wh_json:object()) -> {binary(), binary(), binary()}.
 get_event_type(JObj) ->
     { wh_json:get_value(<<"Event-Category">>, JObj, <<>>)
       ,wh_json:get_value(<<"Event-Name">>, JObj, <<>>)
