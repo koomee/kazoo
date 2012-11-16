@@ -1535,7 +1535,11 @@ wait_for_headless_application(Application, Event, Type, Timeout) ->
 %% Wait for a DTMF event and extract the digits when it comes
 %% @end
 %%--------------------------------------------------------------------
--spec wait_for_dtmf/1 :: ('infinity' | pos_integer()) -> {'error', 'channel_hungup' | wh_json:object()} | {'ok', binary()}.
+-spec wait_for_dtmf/1 :: ('infinity' | pos_integer()) -> {'error', 'channel_hungup'
+                                                          | 'channel_destroy'
+                                                          | wh_json:object()
+                                                         } |
+                                                         {'ok', binary()}.
 wait_for_dtmf(Timeout) ->
     Start = erlang:now(),
     receive
